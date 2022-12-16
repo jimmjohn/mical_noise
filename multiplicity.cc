@@ -36,6 +36,7 @@ Double_t cal_slope2(Double_t x, Double_t* par) {
 void GetPosInStrip(int ixy, double* ext, double* otherext, double* off, double* pos, double* local) {
   for (int ij=0; ij<nlayer; ij++) {
     local[ij] = ext[ij]; //+off[ij];
+    #if defined(DATA_ANALYSIS)
     if (ixy==0) {
       local[ij] +=cal_slope2(otherext[ij], &align_ystr_xdev[ij][0]);
       local[ij] +=cal_slope2(local[ij], &align_xstr_xdev[ij][0]);
@@ -43,8 +44,8 @@ void GetPosInStrip(int ixy, double* ext, double* otherext, double* off, double* 
       local[ij] +=cal_slope2(otherext[ij], &align_xstr_ydev[ij][0]);
       local[ij] +=cal_slope2(local[ij], &align_ystr_ydev[ij][0]);
     }
-
     local[ij] +=off[ij];
+    #endif
     int istr = int(local[ij]);
     if (local[ij]<0.0) {
       pos[ij] = local[ij] - istr + 0.5;
@@ -63,7 +64,7 @@ int main() {
 
   //TFile *fileIn_Mag = new TFile("gen4_inout1_SingleStack_with_noise.root","read");
 #if !defined(DATA_ANALYSIS)
-  TFile *fileIn_NonMag = new TFile("gen4_inout1_SingleStack_with_noise_linear.root","read");
+  TFile *fileIn_NonMag = new TFile("gen4_inout1_SingleStack_with_noise_30_percent.root","read");
 #endif
 #if defined(DATA_ANALYSIS)
   TFile *fileIn_NonMag = new TFile("RPCv4t_evtraw-20181226_192924.rre","read");
@@ -185,7 +186,6 @@ int main() {
 
 
 
-
   //TFile* outputFile = new TFile("output.root","recreate");
   TFile *fileOut = new TFile("multiplicity.root","RECREATE");
   TTree* T1 = new TTree("T1","T1");
@@ -303,6 +303,7 @@ int main() {
     //__________________________________________________________________________
     event->Loop();
     Int_t nentry = event_tree->GetEntries();
+    int nTrigentry =0;
     nentry = 3000000;
     for(int iev=0;iev<nentry;iev++) {
       //cout<<iev<<endl;
@@ -360,7 +361,32 @@ int main() {
       //  if (gProofServ) gProofServ->SendAsynMessage(msg1);
       // }
       //
+      int TrgLayer[4];
+      int nTriggerX[nlayer];
+      int nTriggerY[nlayer];
 
+      TrgLayer[0] = 6;
+      TrgLayer[1] = 7;
+      TrgLayer[2] = 8;
+      TrgLayer[3] = 9;
+      int triglays = 4;
+      for(int ij=0; ij<nlayer; ij++) {
+        nTriggerX[ij] = 0; nTriggerY[ij]=0;
+      }
+
+
+      //cout<<"\nNew Event, Ndigihit="<<event->ndigiht<<endl;
+      if(event->ndigiht==0){
+        for(int ij=0; ij<nlayer; ij++) {
+          if(event->xLayer[ij]){delete event->xLayer[ij];}
+          if(event->yLayer[ij]){delete event->yLayer[ij];}
+          for(int jk=0; jk<nchannel; jk++) {
+            if(event->vxtdc_l[ij][jk]){delete event->vxtdc_l[ij][jk];}
+            if(event->vytdc_l[ij][jk]){delete event->vytdc_l[ij][jk];}
+          }
+        }
+        continue;
+      }
 
       for(unsigned int ki=0;ki<event->ndigiht;ki++) {
 
@@ -387,6 +413,10 @@ int main() {
           //timex_reso_Chk[nInLA]->Fill(600.0+0.1*(digitime[ki]*2.0-2950.0));
           //TString msg1 = TString::Format("digitime=%d\n", digitime[ki]);
           //if (gProofServ) gProofServ->SendAsynMessage(msg1);
+          if(TrgLayer[0]==nInLA || TrgLayer[1]==nInLA || TrgLayer[2]==nInLA || TrgLayer[3]==nInLA) {
+            nTriggerX[nInLA]++;
+            //cout<<"Trigger in X L"<<nInLA<<"\tstrip"<<nInX<<endl;
+          }
         }
 
         if(nInSide == 1 && nInX<64 && nInX>=0 && nInLA<10 && nInLA>=0) {
@@ -395,13 +425,41 @@ int main() {
           //timey_reso_Chk[nInLA]->Fill(600.0+0.1*(digitime[ki]-3010.0));
           //vytdc_l[nInLA][nInX%8]->push_back(digitime[ki]*2.0-2950.0);
           //timey_reso_Chk[nInLA]->Fill(600.0+0.1*(digitime[ki]*2.0-2950.0));
+          if(TrgLayer[0]==nInLA || TrgLayer[1]==nInLA || TrgLayer[2]==nInLA || TrgLayer[3]==nInLA) {
+            nTriggerY[nInLA]++;
+            //cout<<"Trigger in Y L"<<nInLA<<"\tstrip"<<nInX<<endl;
+          }
         }
 
+      }  // digihit ending
+
+      int sw_trigx = 0;
+      int sw_trigy = 0;
+
+      for(int tr1=0; tr1<nlayer; tr1++) {
+        for(int tr2=0; tr2<triglays; tr2++) {
+          if(tr1==TrgLayer[tr2]) {
+    	       if(nTriggerX[tr1]>0) {sw_trigx++;}
+    	       if(nTriggerY[tr1]>0) {sw_trigy++;}
+          }
+        }
+      }
+
+      if(sw_trigx<=3 && sw_trigy<=3) {
+        for(int ij=0; ij<nlayer; ij++) {
+          if(event->xLayer[ij]){delete event->xLayer[ij];}
+          if(event->yLayer[ij]){delete event->yLayer[ij];}
+          for(int jk=0; jk<nchannel; jk++) {
+            if(event->vxtdc_l[ij][jk]){delete event->vxtdc_l[ij][jk];}
+            if(event->vytdc_l[ij][jk]){delete event->vytdc_l[ij][jk];}
+          }
+        }
+        continue;
       }
 
    #endif
 
-
+      nTrigentry++;
 
       //Fill position hits in xptsall vector. Also corrosponding timing
       //  in xTime_all and yTime_all vectors provided the time is between 310 to 360
@@ -463,6 +521,8 @@ int main() {
         }
 
         //cout<<endl;
+
+
 
 
         for (unsigned int ix=0; ix<xpts[jk].size(); ix++) {
@@ -545,7 +605,9 @@ int main() {
             {tempx += xpts[jk][ix+1]; mul++;}
             else {
               double val = (double)tempx/(double)mul + 0.5 - xoff[jk];
+              #if defined(DATA_ANALYSIS)
               val -= cal_slope2(val, &align_xstr_xdev[jk][0]);
+              #endif
               xptsall[jk].push_back(val);
               mul=1;
               tempx=0;
@@ -555,8 +617,10 @@ int main() {
         xxerr[jk] = errxco[jk]*errxco[jk];
         if (xpos[jk]>=0.0) {
           xpos[jk]  = xpos[jk]/xhits[jk] + 0.5 - xoff[jk];
+          #if defined(DATA_ANALYSIS)
           //Aligmnent Correction
           xpos[jk] -= cal_slope2(xpos[jk], &align_xstr_xdev[jk][0]);
+          #endif
           xxerr[jk] = xposerrsq[xhits[jk]-1][jk];
         }
         //Y-Side
@@ -581,7 +645,9 @@ int main() {
              {tempy += ypts[jk][ix+1]; mul++;}
             else {
               double val = (double)tempy/(double)mul + 0.5 - yoff[jk];
+              #if defined(DATA_ANALYSIS)
               val -= cal_slope2(val, &align_ystr_ydev[jk][0]);
+              #endif
               yptsall[jk].push_back(val);
               mul=1;
               tempy=0;
@@ -592,7 +658,9 @@ int main() {
         if (ypos[jk]>=0.0) {
           ypos[jk]  = ypos[jk]/yhits[jk] + 0.5 - yoff[jk];
           //Aligmnent Correction
+          #if defined(DATA_ANALYSIS)
           ypos[jk] -= cal_slope2(ypos[jk], &align_ystr_ydev[jk][0]);
+          #endif
           yyerr[jk] = yposerrsq[yhits[jk]-1][jk];
         }
         //Sort out hits, which can be used for fit
@@ -624,10 +692,12 @@ int main() {
       yposfit.GetParameters(yfitfailed, yintersect, yslope);
       yposfit.GetFitValues(yext, ydev, yexter);
 
+      #if defined(DATA_ANALYSIS)
       for (int ix=0; ix<nlayer; ix++) {
         xpos[ix] -=cal_slope2(yext[ix], &align_ystr_xdev[ix][0]);
         ypos[ix] -=cal_slope2(xext[ix], &align_xstr_ydev[ix][0]);
       }
+      #endif
 
       //X-Side fit
       xposfit = StraightLineFit(1, zvalue, xpos,  xxerr, xusedpos, 10, 11, layfirst, laylast, xyPosDev);
@@ -641,6 +711,7 @@ int main() {
       yposfit.GetFitValues(yext, ydev, yexter);
       yposfit.GetChisqure(yndof,ychisquare);
       GetPosInStrip(1, yext, xext, yoff, yposinstr, yextloc);
+
 
       copy(begin(tempxpos), end(tempxpos), begin(xpos));
       copy(begin(tempypos), end(tempypos), begin(ypos));
@@ -729,18 +800,18 @@ int main() {
 
       }
 
-      // Xtime fit
-	    int iTimeSlopeConst = 1;
-	    StraightLineFit xtimefit(iTimeSlopeConst, dist, xtime,  timeserrx2, xusedtime, 10, 11, layfirst, laylast, float(7.0));
-	    xtimefit.GetParameters(xtfitfailed, xtintersect, xtslope);
-	    xtimefit.GetFitValues(xtext, xtdev, xtexter);
-	    xtimefit.GetChisqure(xtndof, xtchisquare);
-
-      // Ytime fit
-	    StraightLineFit ytimefit(iTimeSlopeConst, dist, ytime,  timeserry2, yusedtime, 10, 11, layfirst, laylast, float(7.0));
-	    ytimefit.GetParameters(ytfitfailed, ytintersect, ytslope);
-	    ytimefit.GetFitValues(ytext, ytdev, ytexter);
-	    ytimefit.GetChisqure(ytndof, ytchisquare);
+      // // Xtime fit
+	    // int iTimeSlopeConst = 1;
+	    // StraightLineFit xtimefit(iTimeSlopeConst, dist, xtime,  timeserrx2, xusedtime, 10, 11, layfirst, laylast, float(7.0));
+	    // xtimefit.GetParameters(xtfitfailed, xtintersect, xtslope);
+	    // xtimefit.GetFitValues(xtext, xtdev, xtexter);
+	    // xtimefit.GetChisqure(xtndof, xtchisquare);
+      //
+      // // Ytime fit
+	    // StraightLineFit ytimefit(iTimeSlopeConst, dist, ytime,  timeserry2, yusedtime, 10, 11, layfirst, laylast, float(7.0));
+	    // ytimefit.GetParameters(ytfitfailed, ytintersect, ytslope);
+	    // ytimefit.GetFitValues(ytext, ytdev, ytexter);
+	    // ytimefit.GetChisqure(ytndof, ytchisquare);
 
 
       //Before removing noise hits
@@ -753,6 +824,9 @@ int main() {
       }
 
       n_multall[set]->Fill(nmulall);
+
+      //cout<<"\nnmulall="<<nmulall<<endl;
+      //if(nmulall==0){return 0;}
 
 
       for (int ij=0; ij<nlayer; ij++) {
@@ -847,7 +921,7 @@ int main() {
     } //NENTRY LOOP
 
     // Normalise layer multiplity for each individual value of total multiplicity
-    Int_t ntotal = nentry;
+    Int_t ntotal = nTrigentry;
     for (int ij=0; ij<nlayer; ij++) {
       //cout<<"ij "<< ij<<endl;
       for (int jk=0; jk<total_vs_indmulall[ij][set]->GetNbinsX(); jk++) {
